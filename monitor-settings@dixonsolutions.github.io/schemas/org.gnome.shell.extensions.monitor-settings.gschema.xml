@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.monitor-settings" path="/org/gnome/shell/extensions/monitor-settings/">
+    <key name="main-slider-excluded" type="as">
+      <default>[]</default>
+      <summary>Monitors not driven by the main brightness slider</summary>
+      <description>Monitor ids (MFG:Model:Serial). New monitors are included by default.</description>
+    </key>
+    <key name="hidden-features" type="as">
+      <default>[]</default>
+      <summary>Hidden controls</summary>
+      <description>Entries of the form "monitor-id|HEXCODE" that are not shown in the menu.</description>
+    </key>
+    <key name="show-manufacturer-features" type="b">
+      <default>false</default>
+      <summary>Show manufacturer-specific features (VCP 0xE0–0xFF)</summary>
+    </key>
+    <key name="step" type="i">
+      <range min="1" max="50"/>
+      <default>5</default>
+      <summary>Keyboard step in percent</summary>
+    </key>
+    <key name="show-osd" type="b">
+      <default>true</default>
+      <summary>Show the on-screen display when using shortcuts</summary>
+    </key>
+    <key name="ddcutil-path" type="s">
+      <default>''</default>
+      <summary>Path to ddcutil (empty = auto-detect)</summary>
+    </key>
+    <key name="ddcutil-extra-args" type="s">
+      <default>''</default>
+      <summary>Extra ddcutil arguments, space separated (e.g. --sleep-multiplier 0.5)</summary>
+    </key>
+    <key name="increase-brightness" type="as">
+      <default><![CDATA[['<Control>XF86MonBrightnessUp']]]></default>
+      <summary>Shortcut to increase brightness of the selected monitors</summary>
+    </key>
+    <key name="decrease-brightness" type="as">
+      <default><![CDATA[['<Control>XF86MonBrightnessDown']]]></default>
+      <summary>Shortcut to decrease brightness of the selected monitors</summary>
+    </key>
+    <key name="debug" type="b">
+      <default>false</default>
+      <summary>Log every ddcutil call to the journal</summary>
+    </key>
+  </schema>
+</schemalist>

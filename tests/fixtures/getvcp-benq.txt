@@ -1,0 +1,28 @@
+VCP 02 CNC x00 x02 x00 x01
+Feature 04 (Restore factory defaults) is not readable
+Feature 05 (Restore factory brightness/contrast defaults) is not readable
+Feature 08 (Restore color defaults) is not readable
+VCP 0B CNC x00 x32 x00 x32
+VCP 0C C 70 65535
+VCP 10 C 50 100
+VCP 12 C 50 100
+VCP 14 SNC x05
+VCP 16 C 100 100
+VCP 18 C 100 100
+VCP 1A C 100 100
+VCP 52 CNC xff xff x00 x00
+VCP 60 SNC x0f
+VCP 62 C 0 100
+VCP 8D SNC x02
+VCP AC C 1464 1
+VCP AE C 6000 65535
+VCP B2 SNC x01
+VCP B6 SNC x03
+VCP C0 C 6202 65535
+VCP C6 CNC x00 xff x00 x5a
+VCP C8 CNC x00 x58 x00 x05
+VCP C9 CNC xff xff x03 x0a
+VCP CA SNC x02
+VCP CC SNC x02
+VCP D6 SNC x01
+VCP DF CNC xff xff x02 x01

@@ -1,0 +1,17 @@
+Display 1
+   I2C bus:          /dev/i2c-10
+   DRM connector:    card1-DP-2
+   drm_connector_id: 525
+   Monitor:          BNQ:BenQ BL2780:SERIAL0001
+
+Display 2
+   I2C bus:          /dev/i2c-12
+   DRM connector:    card1-HDMI-A-1
+   drm_connector_id: 530
+   Monitor:          DEL:DELL U2720Q:SERIAL0002
+
+Invalid display
+   I2C bus:          /dev/i2c-4
+   DRM connector:    card1-eDP-1
+   Monitor:          BOE:NE135FBM-N41:
+

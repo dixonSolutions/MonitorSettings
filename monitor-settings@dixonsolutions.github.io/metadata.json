@@ -1,0 +1,10 @@
+{
+  "uuid": "monitor-settings@dixonsolutions.github.io",
+  "name": "Monitor Settings",
+  "description": "Control brightness, contrast, color, input, volume and every other DDC/CI setting your external monitors support, directly from Quick Settings. Settings are auto-detected per monitor via ddcutil; one slider can drive any selection of monitors.",
+  "shell-version": ["49", "50", "51"],
+  "url": "https://github.com/dixonSolutions/MonitorSettings",
+  "settings-schema": "org.gnome.shell.extensions.monitor-settings",
+  "gettext-domain": "monitor-settings",
+  "version": 1
+}

@@ -1,0 +1,39 @@
+.monitor-settings-range,
+.monitor-settings-choice {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.monitor-settings-name {
+  font-weight: bold;
+  padding-bottom: 4px;
+}
+
+.monitor-settings-value {
+  font-feature-settings: "tnum";
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.monitor-settings-chip {
+  padding: 4px 10px;
+  border-radius: 99px;
+  min-height: 0;
+  font-size: 0.9em;
+}
+
+.monitor-settings-chip:checked {
+  background-color: -st-accent-color;
+  color: -st-accent-fg-color;
+}
+
+.monitor-settings-heading {
+  font-weight: bold;
+}
+
+.monitor-settings-chip-rows {
+  spacing: 6px;
+}
+
+.monitor-settings-chip-row {
+  spacing: 6px;
+}

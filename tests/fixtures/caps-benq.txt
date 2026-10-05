@@ -1,0 +1,75 @@
+Model: BL2780
+MCCS version: 2.1
+Commands:
+   Op Code: 01 (VCP Request)
+   Op Code: 02 (VCP Response)
+   Op Code: 03 (VCP Set)
+   Op Code: 07 (Timing Request)
+   Op Code: 0C (Save Settings)
+   Op Code: F3 (Capabilities Request)
+VCP Features:
+   Feature: 02 (New control value)
+   Feature: 04 (Restore factory defaults)
+   Feature: 05 (Restore factory brightness/contrast defaults)
+   Feature: 08 (Restore color defaults)
+   Feature: 0B (Color temperature increment)
+   Feature: 0C (Color temperature request)
+   Feature: 10 (Brightness)
+   Feature: 12 (Contrast)
+   Feature: 14 (Select color preset)
+      Values:
+         04: 5000 K
+         05: 6500 K
+         08: 9300 K
+         0b: User 1
+   Feature: 16 (Video gain: Red)
+   Feature: 18 (Video gain: Green)
+   Feature: 1A (Video gain: Blue)
+   Feature: 52 (Active control)
+   Feature: 60 (Input Source)
+      Values:
+         01: VGA-1
+         0f: DisplayPort-1
+         11: HDMI-1
+   Feature: 62 (Audio speaker volume)
+   Feature: 8D (Audio Mute)
+      Values:
+         01: Mute the audio
+         02: Unmute the audio
+   Feature: AC (Horizontal frequency)
+   Feature: AE (Vertical frequency)
+   Feature: B2 (Flat panel sub-pixel layout)
+   Feature: B6 (Display technology type)
+   Feature: C0 (Display usage time)
+   Feature: C6 (Application enable key)
+   Feature: C8 (Display controller type)
+   Feature: C9 (Display firmware level)
+   Feature: CA (OSD)
+      Values:
+         01: OSD Disabled
+         02: OSD Enabled
+   Feature: CC (OSD Language)
+      Values:
+         01: Chinese (traditional, Hantai)
+         02: English
+         03: French
+         04: German
+         05: Italian
+         06: Japanese
+         09: Russian
+         0a: Spanish
+         0b: Swedish
+         0d: Chinese (simplified / Kantai)
+         0e: Portuguese (Brazil)
+         0f: Arabic
+         12: Czech
+         14: Dutch
+         1a: Hungarian
+         1e: Polish
+         1f: Romanian 
+         20: Serbian
+   Feature: D6 (Power mode)
+      Values:
+         01: DPM: On,  DPMS: Off
+         05: Write only value to turn off display
+   Feature: DF (VCP Version)

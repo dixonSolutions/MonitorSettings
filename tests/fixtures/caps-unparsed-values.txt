@@ -1,0 +1,11 @@
+Model: U2720Q
+MCCS version: 2.1
+VCP Features:
+   Feature: 10 (Brightness)
+   Feature: 60 (Input Source)
+      Values: 0F 11 1B (interpretation unavailable)
+   Feature: E0 (Manufacturer specific feature)
+   Feature: F0 (Manufacturer specific feature)
+      Values:
+         00: Off
+         01: On

@@ -1,0 +1,6 @@
+{
+  "uuid": "monitor-settings-test@dixonsolutions.github.io",
+  "name": "Monitor Settings test harness",
+  "description": "Drives the Monitor Settings UI inside a headless shell and reports results.",
+  "shell-version": ["49", "50", "51"]
+}
