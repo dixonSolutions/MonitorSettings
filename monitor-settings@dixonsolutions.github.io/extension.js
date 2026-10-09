@@ -472,11 +472,14 @@ export default class MonitorSettingsExtension extends Extension {
         this._indicator = null;
 
         const brightnessItem = this._nativeBrightnessActive ? this._findBrightnessItem() : null;
-        this._log(this._nativeBrightnessActive
-            ? (brightnessItem
-                ? 'brightness UI: GNOME brightness menu (no slider of our own)'
-                : 'brightness UI: GNOME brightness item not found, falling back to own slider')
-            : 'brightness UI: own slider (native brightness off)');
+        if (this._nativeBrightnessActive && !brightnessItem)
+            this._log('brightness UI: GNOME brightness item not found, falling back to own slider');
+        else if (this._nativeBrightnessActive)
+            this._log('brightness UI: GNOME brightness menu (no slider of our own)');
+        else if (this._settings.get_boolean('native-brightness'))
+            this._log('brightness UI: own slider (no monitors bridged yet)');
+        else
+            this._log('brightness UI: own slider (native-brightness off)');
         if (brightnessItem) {
             // Publish the non-brightness features inside GNOME's brightness
             // menu instead of adding a second slider.
