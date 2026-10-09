@@ -1,5 +1,12 @@
 // Monitor Settings: Quick Settings controls for every DDC/CI feature that
 // each connected monitor reports.
+//
+// Brightness is special: instead of shipping a second slider, the extension
+// can hand each monitor's DDC/CI brightness to GNOME's own brightness control
+// (lib/brightness.js), so the built-in Quick Settings slider, the brightness
+// keys, the OSD, dimming and auto-brightness all drive the monitors. The
+// remaining features (contrast, color, input, volume, resets, …) stay in this
+// extension's menu.
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
@@ -15,6 +22,7 @@ import {QuickSlider, SystemIndicator} from 'resource:///org/gnome/shell/ui/quick
 import {Slider} from 'resource:///org/gnome/shell/ui/slider.js';
 
 import {DdcutilBackend} from './lib/ddcutil.js';
+import {NativeBrightnessBridge} from './lib/brightness.js';
 import {fmt, hex} from './lib/parse.js';
 
 const BRIGHTNESS = 0x10;
@@ -154,45 +162,29 @@ class ActionItem extends PopupMenu.PopupMenuItem {
     sync() {}
 });
 
-const MonitorSettingsSlider = GObject.registerClass(
-class MonitorSettingsSlider extends QuickSlider {
-    _init(ext) {
-        super._init({
-            iconName: 'display-brightness-symbolic',
-            iconLabel: _('Monitor brightness'),
-            menuEnabled: true,
-            menuButtonAccessibleName: _('Open monitor settings'),
-        });
-        this._ext = ext;
-        this._settings = ext.getSettings();
-        this.slider.accessible_name = _('Monitor brightness');
-        this._sliderChangedId = this.slider.connect('notify::value', () => this._onSliderChanged());
-
-        this.menu.setHeader('video-display-symbolic', _('Monitor Settings'));
-        this._selectSection = new PopupMenu.PopupMenuSection();
-        this._monitorsSection = new PopupMenu.PopupMenuSection();
-        this.menu.addMenuItem(this._selectSection);
-        this.menu.addMenuItem(this._monitorsSection);
-        this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-        this._statusItem = new PopupMenu.PopupMenuItem('', {reactive: false});
-        this.menu.addMenuItem(this._statusItem);
-        this.menu.addAction(_('Rescan Monitors'), () => ext.rescan());
-        this.menu.addAction(_('Monitor Settings Preferences'), () => ext.openPreferences());
-
-        this.menu.connect('open-state-changed', (_m, open) => {
-            if (open)
-                this._ext.refreshSelected();
-        });
-
+/**
+ * The Monitor Settings menu body: which monitors the main slider drives,
+ * a submenu of every detected control per monitor, a status line and the
+ * rescan/preferences actions. Used both inside the extension's own slider and
+ * inside GNOME's brightness menu when brightness is bridged.
+ */
+const MonitorFeatureSection = class MonitorFeatureSection extends PopupMenu.PopupMenuSection {
+    constructor(owner) {
+        super();
+        this._owner = owner;
         this._items = new Map();
         this._unsubscribe = [];
-        this.setMonitors([], [], _('Detecting monitors…'));
+        this._monitors = [];
+        this._submenus = new Map();
     }
 
-    /** Monitors the main slider drives. */
-    get targets() {
-        const excluded = this._settings.get_strv('main-slider-excluded');
-        return this._monitors.filter(m => !excluded.includes(m.id) && m.control(BRIGHTNESS));
+    get items() {
+        return this._items;
+    }
+
+    /** The per-monitor submenu, for tests and for menus built elsewhere. */
+    submenu(monitor) {
+        return this._submenus?.get(monitor.id) ?? null;
     }
 
     setMonitors(monitors, unsupported, status = '') {
@@ -200,28 +192,28 @@ class MonitorSettingsSlider extends QuickSlider {
         this._unsubscribe = [];
         this._items.clear();
         this._monitors = monitors;
-        this._selectSection.removeAll();
-        this._monitorsSection.removeAll();
+        this.removeAll();
 
-        const hidden = this._settings.get_strv('hidden-features');
+        const settings = this._owner.settings;
+        const hidden = settings.get_strv('hidden-features');
         const withBrightness = monitors.filter(m => m.control(BRIGHTNESS));
 
         if (withBrightness.length > 1) {
-            this._selectSection.addMenuItem(new PopupMenu.PopupMenuItem(
+            this.addMenuItem(new PopupMenu.PopupMenuItem(
                 _('Main slider controls'), {reactive: false, style_class: 'monitor-settings-heading'}));
             for (const m of withBrightness) {
-                const excluded = this._settings.get_strv('main-slider-excluded');
+                const excluded = settings.get_strv('main-slider-excluded');
                 const sw = new PopupMenu.PopupSwitchMenuItem(m.label, !excluded.includes(m.id));
                 sw.connect('toggled', (_i, on) => {
-                    const list = this._settings.get_strv('main-slider-excluded').filter(id => id !== m.id);
+                    const list = settings.get_strv('main-slider-excluded').filter(id => id !== m.id);
                     if (!on)
                         list.push(m.id);
-                    this._settings.set_strv('main-slider-excluded', list);
-                    this.syncSlider();
+                    settings.set_strv('main-slider-excluded', list);
+                    this._owner.onMainSliderChanged();
                 });
-                this._selectSection.addMenuItem(sw);
+                this.addMenuItem(sw);
             }
-            this._selectSection.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+            this.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
         }
 
         for (const m of monitors) {
@@ -244,7 +236,8 @@ class MonitorSettingsSlider extends QuickSlider {
                 if (open)
                     m.read().catch(logError);
             });
-            this._monitorsSection.addMenuItem(sub);
+            this.addMenuItem(sub);
+            this._submenus.set(m.id, sub);
             this._unsubscribe.push(m.subscribe((mon, control) => this._onControlChanged(mon, control)));
         }
 
@@ -257,23 +250,85 @@ class MonitorSettingsSlider extends QuickSlider {
             lines.push(monitors.length === 1 ? _('1 monitor') : fmt(_('%d monitors'), monitors.length));
         for (const d of unsupported)
             lines.push(fmt(_('%s: no DDC/CI'), d.model || d.connector || `bus ${d.bus}`));
-        this._statusItem.label.text = lines.join('\n');
-        this.menu.setHeader('video-display-symbolic', _('Monitor Settings'), lines[0]);
+        this._statusText = lines[0];
+        this._statusItem = new PopupMenu.PopupMenuItem(lines.join('\n'), {reactive: false});
+        this.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+        this.addMenuItem(this._statusItem);
+        this.addAction(_('Rescan Monitors'), () => this._owner.rescan());
+        this.addAction(_('Monitor Settings Preferences'), () => this._owner.openPreferences());
+    }
 
-        this.slider.reactive = withBrightness.length > 0;
-        this.syncSlider();
+    get statusText() {
+        return this._statusText ?? '';
     }
 
     _onControlChanged(monitor, control) {
         this._items.get(featureKey(monitor, control.code))?.sync();
-        if (control.code === BRIGHTNESS)
-            this.syncSlider();
+        this._owner.onControlChanged(monitor, control);
         if (control.locked && !control._notified) {
             control._notified = true;
             Main.notify(fmt(_('%s ignored the %s change'), monitor.label, control.name),
                 _('The monitor accepted the command but did not apply it. A monitor mode is probably locking it ' +
                   '(e.g. eco, auto/ambient brightness, low blue light, HDR or a picture preset). Change that mode in the monitor\'s own menu.'));
         }
+    }
+
+    destroy() {
+        this._unsubscribe.forEach(fn => fn());
+        this._unsubscribe = [];
+        this._items.clear();
+        super.destroy();
+    }
+};
+
+const MonitorSettingsSlider = GObject.registerClass(
+class MonitorSettingsSlider extends QuickSlider {
+    _init(ext) {
+        super._init({
+            iconName: 'display-brightness-symbolic',
+            iconLabel: _('Monitor brightness'),
+            menuEnabled: true,
+            menuButtonAccessibleName: _('Open monitor settings'),
+        });
+        this._ext = ext;
+        this._settings = ext.getSettings();
+        this.slider.accessible_name = _('Monitor brightness');
+        this._sliderChangedId = this.slider.connect('notify::value', () => this._onSliderChanged());
+
+        this.menu.setHeader('video-display-symbolic', _('Monitor Settings'));
+        this._features = new MonitorFeatureSection({
+            settings: this._settings,
+            rescan: () => ext.rescan(),
+            openPreferences: () => ext.openPreferences(),
+            onMainSliderChanged: () => this.syncSlider(),
+            onControlChanged: (m, c) => {
+                if (c.code === BRIGHTNESS)
+                    this.syncSlider();
+            },
+        });
+        this.menu.addMenuItem(this._features);
+
+        this.menu.connect('open-state-changed', (_m, open) => {
+            if (open)
+                this._ext.refreshSelected();
+        });
+
+        this.setMonitors([], [], _('Detecting monitors…'));
+    }
+
+    /** Monitors the main slider drives. */
+    get targets() {
+        const excluded = this._settings.get_strv('main-slider-excluded');
+        return this._monitors.filter(m => !excluded.includes(m.id) && m.control(BRIGHTNESS));
+    }
+
+    setMonitors(monitors, unsupported, status = '') {
+        this._monitors = monitors;
+        const withBrightness = monitors.filter(m => m.control(BRIGHTNESS));
+        this._features.setMonitors(monitors, unsupported, status);
+        this.menu.setHeader('video-display-symbolic', _('Monitor Settings'), this._features.statusText);
+        this.slider.reactive = withBrightness.length > 0;
+        this.syncSlider();
     }
 
     syncSlider() {
@@ -298,12 +353,12 @@ class MonitorSettingsSlider extends QuickSlider {
         for (const m of this.targets) {
             const c = m.control(BRIGHTNESS);
             m.write(BRIGHTNESS, Math.round(fraction * c.max));
-            this._items.get(featureKey(m, BRIGHTNESS))?.sync();
+            this._features.items.get(featureKey(m, BRIGHTNESS))?.sync();
         }
     }
 
     destroy() {
-        this._unsubscribe.forEach(fn => fn());
+        this._features.destroy();
         super.destroy();
     }
 });
@@ -325,14 +380,25 @@ class MonitorSettingsIndicator extends SystemIndicator {
 export default class MonitorSettingsExtension extends Extension {
     enable() {
         this._settings = this.getSettings();
-        this._indicator = new MonitorSettingsIndicator(this);
-        Main.panel.statusArea.quickSettings.addExternalIndicator(this._indicator, 2);
+        this._monitors = [];
+        this._unsupported = [];
+
+        // GNOME's own brightness control, driven by DDC/CI.
+        this._bridge = new NativeBrightnessBridge({settings: this._settings, log: m => this._log(m)});
+
+        if (this._settings.get_boolean('native-brightness'))
+            this._bridge.install();
+
+        this._rebuildUI();
+        this._watchQuickSettings();
 
         this._settingsIds = [
             'ddcutil-path', 'ddcutil-extra-args', 'show-manufacturer-features',
         ].map(k => this._settings.connect(`changed::${k}`, () => this.rescan()));
         this._settingsIds.push(this._settings.connect('changed::hidden-features', () => this._rebuild()));
         this._settingsIds.push(this._settings.connect('changed::main-slider-excluded', () => this._rebuild()));
+        this._settingsIds.push(this._settings.connect('changed::brightness-map-unmatched', () => this._rebuild()));
+        this._settingsIds.push(this._settings.connect('changed::native-brightness', () => this._onNativeBrightnessChanged()));
 
         for (const [key, dir] of [['increase-brightness', 1], ['decrease-brightness', -1]]) {
             Main.wm.addKeybinding(key, this._settings, Meta.KeyBindingFlags.NONE,
@@ -342,8 +408,6 @@ export default class MonitorSettingsExtension extends Extension {
 
         this._monitorsChangedId = Main.layoutManager.connect('monitors-changed', () => this._scheduleRescan());
         this._scanSerial = 0;
-        this._monitors = [];
-        this._unsupported = [];
         this.rescan();
     }
 
@@ -355,18 +419,185 @@ export default class MonitorSettingsExtension extends Extension {
         if (this._rescanTimeout)
             GLib.source_remove(this._rescanTimeout);
         this._rescanTimeout = 0;
+        if (this._gridTimeout)
+            GLib.source_remove(this._gridTimeout);
+        this._gridTimeout = 0;
+        this._cancelPlacement();
+        if (this._qsOpenId) {
+            Main.panel.statusArea.quickSettings?.menu?.disconnect(this._qsOpenId);
+            this._qsOpenId = 0;
+        }
         this._backend?.destroy();
         this._backend = null;
-        this._indicator.destroy();
+        this._bridge?.uninstall();
+        this._bridge = null;
+        this._indicator?.destroy();
         this._indicator = null;
+        this._removeBridgedMenu();
         this._settings = null;
         this._monitors = [];
+        this._unsupported = [];
         this._scanSerial++;
     }
 
     _log(msg) {
         if (this._settings?.get_boolean('debug'))
             console.log(`[monitor-settings] ${msg}`);
+    }
+
+    /** True when GNOME's brightness control is driving the monitors. */
+    get _nativeBrightnessActive() {
+        return this._bridge?.installed ?? false;
+    }
+
+    _onNativeBrightnessChanged() {
+        const on = this._settings.get_boolean('native-brightness');
+        this._log(`native-brightness -> ${on}`);
+        if (on) {
+            this._bridge.install();
+            this._bridge.setMonitors(this._monitors);
+        } else {
+            this._bridge.uninstall();
+        }
+        this._rebuildUI();
+    }
+
+    /**
+     * Build the Quick Settings surface: GNOME's brightness slider when it is
+     * driving the monitors, otherwise the extension's own slider.
+     */
+    _rebuildUI() {
+        this._removeBridgedMenu();
+        this._indicator?.destroy();
+        this._indicator = null;
+
+        const brightnessItem = this._nativeBrightnessActive ? this._findBrightnessItem() : null;
+        this._log(this._nativeBrightnessActive
+            ? (brightnessItem
+                ? 'brightness UI: GNOME brightness menu (no slider of our own)'
+                : 'brightness UI: GNOME brightness item not found, falling back to own slider')
+            : 'brightness UI: own slider (native brightness off)');
+        if (brightnessItem) {
+            // Publish the non-brightness features inside GNOME's brightness
+            // menu instead of adding a second slider.
+            this._bridgedSection = new MonitorFeatureSection({
+                settings: this._settings,
+                rescan: () => this.rescan(),
+                openPreferences: () => this.openPreferences(),
+                onMainSliderChanged: () => this._rebuild(),
+                onControlChanged: () => {},
+            });
+            this._bridgedSection.setMonitors(this._monitors, this._unsupported);
+            brightnessItem.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+            brightnessItem.menu.addMenuItem(this._bridgedSection);
+            this._bridgedMenu = brightnessItem.menu;
+        } else {
+            this._indicator = new MonitorSettingsIndicator(this);
+            Main.panel.statusArea.quickSettings.addExternalIndicator(this._indicator, 2);
+            // GNOME appends external indicators, which strands our slider at
+            // the bottom of the grid. Put it where GNOME puts its own
+            // brightness slider instead.
+            this._schedulePlacement(this._indicator.slider);
+        }
+        this._logGrid();
+    }
+
+    /**
+     * Move @actor to sit where GNOME's own brightness slider is.
+     *
+     * Quick Settings is built asynchronously and external indicators are
+     * appended, so at enable time the grid is still half-empty and there is no
+     * brightness item to sit next to. Retry for a while, and again whenever
+     * the menu is opened, so we always end up in the right slot.
+     */
+    _schedulePlacement(actor) {
+        this._cancelPlacement();
+        this._placementActor = actor;
+        this._placementTries = 15;
+        this._placementId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 1, () => {
+            if (this._placeAfterBrightnessItem(this._placementActor) || this._placementTries-- <= 0) {
+                this._placementId = 0;
+                return GLib.SOURCE_REMOVE;
+            }
+            return GLib.SOURCE_CONTINUE;
+        });
+    }
+
+    _cancelPlacement() {
+        if (this._placementId)
+            GLib.source_remove(this._placementId);
+        this._placementId = 0;
+        this._placementActor = null;
+    }
+
+    /** @returns {boolean} true once the actor is in its final position. */
+    _placeAfterBrightnessItem(actor) {
+        const grid = Main.panel.statusArea.quickSettings?.menu?._grid;
+        const brightnessItem = this._findBrightnessItem();
+        if (!actor || !grid || !brightnessItem || brightnessItem.get_parent() !== grid)
+            return false;
+        const children = grid.get_children();
+        const index = children.indexOf(brightnessItem);
+        if (index < 0)
+            return false;
+        if (children.indexOf(actor) !== index + 1) {
+            grid.set_child_at_index(actor, index + 1);
+            this._log('brightness slider moved next to GNOME\u2019s brightness slider');
+        }
+        return true;
+    }
+
+    _logGrid() {
+        const grid = Main.panel.statusArea.quickSettings?.menu?._grid;
+        this._log('QS grid: ' + (grid?.get_children?.() ?? [])
+            .map(c => c.constructor.name).join(' '));
+    }
+
+    /** Quick Settings is built asynchronously; log the settled order once. */
+    _logGridLater(seconds = 15) {
+        if (!this._settings?.get_boolean('debug'))
+            return;
+        this._gridTimeout = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, seconds, () => {
+            this._gridTimeout = 0;
+            this._logGrid();
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    /** Belt: the menu being opened means the grid is settled for sure. */
+    _watchQuickSettings() {
+        const qs = Main.panel.statusArea.quickSettings;
+        if (!qs || this._qsOpenId)
+            return;
+        this._qsOpenId = qs.menu.connect('open-state-changed', (_m, open) => {
+            if (open && this._indicator)
+                this._placeAfterBrightnessItem(this._indicator.slider);
+        });
+        this._logGridLater();
+    }
+
+    /**
+     * GNOME's own brightness QuickSlider, if the shell has one.
+     * Matched by its slider's accessible name because several grid items use
+     * the display-brightness icon (keyboard backlight, this extension).
+     */
+    _findBrightnessItem() {
+        const grid = Main.panel.statusArea.quickSettings?.menu?._grid;
+        for (const child of grid?.get_children?.() ?? []) {
+            if (!child.slider || child.iconName !== 'display-brightness-symbolic')
+                continue;
+            if (child.constructor.name === 'MonitorSettingsSlider')
+                continue;
+            if (child.slider.accessible_name === _('Brightness'))
+                return child;
+        }
+        return null;
+    }
+
+    _removeBridgedMenu() {
+        this._bridgedSection?.destroy();
+        this._bridgedSection = null;
+        this._bridgedMenu = null;
     }
 
     _scheduleRescan() {
@@ -388,7 +619,7 @@ export default class MonitorSettingsExtension extends Extension {
             extraArgs: extra ? extra.split(/\s+/) : [],
             log: m => this._log(m),
         });
-        this._indicator.slider.setMonitors([], [], _('Detecting monitors…'));
+        this._setMonitors([], [], _('Detecting monitors…'));
         try {
             const {monitors, unsupported} = await this._backend.scan({
                 includeManufacturer: this._settings.get_boolean('show-manufacturer-features'),
@@ -403,24 +634,47 @@ export default class MonitorSettingsExtension extends Extension {
             if (serial !== this._scanSerial || e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
                 return;
             console.warn(`[monitor-settings] scan failed: ${e.message}`);
-            this._indicator?.slider.setMonitors([], [], e.message);
+            this._setMonitors([], [], e.message);
         }
     }
 
+    _setMonitors(monitors, unsupported, status = '') {
+        this._notice = status;
+        if (this._indicator)
+            this._indicator.slider.setMonitors(monitors, unsupported, status);
+        else if (this._bridgedSection)
+            this._bridgedSection.setMonitors(monitors, unsupported, status);
+    }
+
     _rebuild() {
-        this._indicator?.slider.setMonitors(this._monitors, this._unsupported);
+        this._bridge?.setMonitors(this._monitors);
+        // Bridging may change whether GNOME owns the brightness UI.
+        if (this._nativeBrightnessActive && !this._bridgedSection)
+            this._rebuildUI();
+        else
+            this._setMonitors(this._monitors, this._unsupported, this._notice ?? '');
     }
 
     refreshSelected() {
-        for (const m of this._indicator?.slider.targets ?? [])
+        const targets = this._indicator?.slider.targets ?? this._monitors;
+        for (const m of targets)
             m.read([BRIGHTNESS]).catch(logError);
     }
 
     _step(direction) {
+        const step = this._settings.get_int('step') / 100;
+
+        if (this._nativeBrightnessActive) {
+            const scale = Main.brightnessManager?.globalScale;
+            if (!scale)
+                return;
+            scale.value = Math.min(1, Math.max(0, scale.value + direction * step));
+            return;
+        }
+
         const slider = this._indicator?.slider;
         if (!slider || !slider.targets.length)
             return;
-        const step = this._settings.get_int('step') / 100;
         const value = Math.min(1, Math.max(0, slider.slider.value + direction * step));
         slider.setBrightness(value);
         slider.syncSlider();

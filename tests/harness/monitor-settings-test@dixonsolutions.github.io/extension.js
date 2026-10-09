@@ -64,7 +64,7 @@ export default class Harness extends Extension {
         const m = inst._monitors[0];
         if (!m) return;
         check('controls auto-detected from monitor', m.controls.length > 0, m.controls.map(c => c.name).join(', '));
-        check('menu items built for every control', slider._items.size === m.controls.length, `${slider._items.size} items`);
+        check('menu items built for every control', slider._features.items.size === m.controls.length, `${slider._features.items.size} items`);
         check('main slider is reactive', slider.slider.reactive);
         const b = m.control(0x10);
         check('main slider reflects monitor brightness', Math.abs(slider.slider.value - b.value / b.max) < 0.01, `slider=${slider.slider.value.toFixed(2)} brightness=${b.value}/${b.max}`);
@@ -75,7 +75,7 @@ export default class Harness extends Extension {
         await screenshot('01-quick-settings');
         slider.menu.open(false);
         await sleep(800);
-        const sub = slider._monitorsSection._getMenuItems()[0];
+        const sub = slider._features.submenu(m);
         sub.setSubmenuShown(true);
         await sleep(1200);
         await screenshot('02-monitor-menu');
@@ -84,7 +84,7 @@ export default class Harness extends Extension {
         const vol = m.control(0x62);
         if (vol) {
             const orig = ddcGet(m.bus, '62');
-            const item = slider._items.get(`${m.id}|62`);
+            const item = slider._features.items.get(`${m.id}|62`);
             item._slider.value = 0.07;
             await sleep(1500);
             const after = ddcGet(m.bus, '62');
@@ -97,7 +97,7 @@ export default class Harness extends Extension {
         // Choice chip writes (OSD language? use audio mute toggle, restored)
         const mute = m.control(0x8D);
         if (mute) {
-            const item = slider._items.get(`${m.id}|8D`);
+            const item = slider._features.items.get(`${m.id}|8D`);
             const orig = mute.value;
             const other = item._buttons.find(btn => btn._value !== orig);
             other.emit('clicked', 1);
@@ -134,10 +134,10 @@ export default class Harness extends Extension {
         const settings = inst._settings;
         settings.set_strv('hidden-features', [`${m.id}|CC`]);
         await sleep(300);
-        check('hidden feature removed from menu', !slider._items.has(`${m.id}|CC`) && slider._items.size === m.controls.length - 1);
+        check('hidden feature removed from menu', !slider._features.items.has(`${m.id}|CC`) && slider._features.items.size === m.controls.length - 1);
         settings.reset('hidden-features');
         await sleep(300);
-        check('hidden feature restored', slider._items.has(`${m.id}|CC`));
+        check('hidden feature restored', slider._features.items.has(`${m.id}|CC`));
 
         // Monitor selection for main slider
         settings.set_strv('main-slider-excluded', [m.id]);
@@ -148,8 +148,8 @@ export default class Harness extends Extension {
         // Hot-plug rescan
         Main.layoutManager.emit('monitors-changed');
         await sleep(3500);
-        await waitFor(() => inst._monitors.length > 0 && slider._items.size > 0);
-        check('rescan after monitors-changed rebuilds menu', slider._items.size === inst._monitors[0].controls.length);
+        await waitFor(() => inst._monitors.length > 0 && slider._features.items.size > 0);
+        check('rescan after monitors-changed rebuilds menu', slider._features.items.size === inst._monitors[0].controls.length);
 
         // Disable/enable cycle
         qs.menu.close(false);
@@ -159,5 +159,42 @@ export default class Harness extends Extension {
         await mgr.enableExtension(UUID);
         const again = await waitFor(() => mgr.lookup(UUID).stateObj?._monitors?.length > 0);
         check('re-enable detects monitors again', !!again && mgr.lookup(UUID).state === 1);
+
+        // ---- GNOME brightness bridge -------------------------------------
+        // The headless shell's only output is virtual, so allow the bridge to
+        // attach the DDC/CI monitor to it, exactly as a nested shell needs.
+        const inst2 = mgr.lookup(UUID).stateObj;
+        const settings2 = inst2._settings;
+        const mon = inst2._monitors[0];
+        const bright = mon.control(0x10);
+        if (!bright) {
+            check('native: monitor exposes brightness', false);
+            return;
+        }
+        settings2.set_boolean('brightness-map-unmatched', true);
+        settings2.set_boolean('native-brightness', true);
+        const bridged = await waitFor(() => Main.brightnessManager.scales.length > 0);
+        check('native: monitor registered with GNOME brightness',
+            !!bridged && Main.brightnessManager.scales.length === 1,
+            `${Main.brightnessManager.scales.length} scales`);
+        check('native: GNOME has a global brightness scale', Main.brightnessManager.globalScale !== null);
+
+        const beforeB = ddcGet(mon.bus, '10');
+        const target = beforeB / bright.max > 0.5 ? 0.3 : 0.7;
+        if (Main.brightnessManager.globalScale)
+            Main.brightnessManager.globalScale.value = target;
+        await sleep(2500);
+        check('native: GNOME brightness scale writes to the monitor',
+            ddcGet(mon.bus, '10') === Math.round(target * bright.max),
+            `read back ${ddcGet(mon.bus, '10')}, wanted ${Math.round(target * bright.max)}`);
+
+        // Opting out must hand brightness control back untouched.
+        settings2.set_boolean('native-brightness', false);
+        await waitFor(() => Main.brightnessManager.scales.length === 0, 8000);
+        check('native: opting out restores GNOME brightness state',
+            Main.brightnessManager.scales.length === 0 && Main.brightnessManager.globalScale === null);
+        await waitFor(() => inst2._indicator?.slider?.get_parent() === qs.menu._grid, 8000);
+        check('native: extension slider returns when opted out',
+            inst2._indicator?.slider?.get_parent() === qs.menu._grid);
     }
 }

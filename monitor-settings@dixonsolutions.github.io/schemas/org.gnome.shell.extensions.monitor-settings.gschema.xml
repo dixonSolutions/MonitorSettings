@@ -15,6 +15,16 @@
       <default>false</default>
       <summary>Show manufacturer-specific features (VCP 0xE0–0xFF)</summary>
     </key>
+    <key name="native-brightness" type="b">
+      <default>true</default>
+      <summary>Drive monitors from GNOME's own brightness control</summary>
+      <description>Register each monitor's DDC/CI brightness with GNOME Shell so the built-in brightness slider, keys, OSD and dimming control it. When this is on and at least one monitor is picked up, the extension does not add a brightness slider of its own.</description>
+    </key>
+    <key name="brightness-map-unmatched" type="b">
+      <default>false</default>
+      <summary>Bridge monitors that are not part of the display layout</summary>
+      <description>Attach DDC/CI brightness to a free logical monitor when no compositor output matches the monitor's connector. Useful in nested or headless test shells whose only output is virtual; leave off on a real desktop.</description>
+    </key>
     <key name="step" type="i">
       <range min="1" max="50"/>
       <default>5</default>
