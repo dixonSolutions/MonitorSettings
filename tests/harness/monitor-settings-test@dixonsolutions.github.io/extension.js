@@ -178,6 +178,12 @@ export default class Harness extends Extension {
             !!bridged && Main.brightnessManager.scales.length === 1,
             `${Main.brightnessManager.scales.length} scales`);
         check('native: GNOME has a global brightness scale', Main.brightnessManager.globalScale !== null);
+        const curB = ddcGet(mon.bus, '10');
+        await waitFor(() => Main.brightnessManager.globalScale?.value >= 0, 8000);
+        const gv = Main.brightnessManager.globalScale?.value ?? -1;
+        check('native: global brightness reflects the monitor',
+            Math.abs(gv - curB / bright.max) < 0.02,
+            `globalScale=${gv.toFixed(3)} monitor=${curB}/${bright.max}`);
 
         const beforeB = ddcGet(mon.bus, '10');
         const target = beforeB / bright.max > 0.5 ? 0.3 : 0.7;
@@ -187,6 +193,13 @@ export default class Harness extends Extension {
         check('native: GNOME brightness scale writes to the monitor',
             ddcGet(mon.bus, '10') === Math.round(target * bright.max),
             `read back ${ddcGet(mon.bus, '10')}, wanted ${Math.round(target * bright.max)}`);
+
+        // Hand the monitor back where we found it.
+        if (Main.brightnessManager.globalScale)
+            Main.brightnessManager.globalScale.value = curB / bright.max;
+        await sleep(2000);
+        check('native: monitor restored after the bridge test',
+            ddcGet(mon.bus, '10') === curB, `read back ${ddcGet(mon.bus, '10')}, wanted ${curB}`);
 
         // Opting out must hand brightness control back untouched.
         settings2.set_boolean('native-brightness', false);

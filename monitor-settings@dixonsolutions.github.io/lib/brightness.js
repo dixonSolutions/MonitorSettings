@@ -286,6 +286,10 @@ export class NativeBrightnessBridge {
             }
             const scale = new DdcBrightnessScale(monitor, logicalMonitor, {log: this._log});
             scale.followsGlobal = !excluded.includes(monitor.id);
+            // Mirror gnome-shell's own MonitorBrightnessScale: mark the scale as
+            // changed so the manager's next sync normalises the global scale to
+            // the monitors' real values, instead of leaving it at its default.
+            scale._scaleChanged = true;
             scale.primeFromControl();
             manager._monitorScales.set(logicalMonitor, scale);
             this._keys.push(logicalMonitor);
@@ -310,6 +314,9 @@ export class NativeBrightnessBridge {
         manager._sync({showOSD: false});
         manager.emit('changed');
         this._log(`bridged ${this._scales.size} monitor(s) into GNOME brightness`);
+        this._log(`globalScale=${manager._globalScale?.value} scales=[${[...this._scales.values()]
+            .map(s => `${s.name}=${s.value.toFixed(3)}(${s._control.value}/${s._control.max})${s._scaleChanged ? ' changed' : ''}`)
+            .join(', ')}] globalChanged=${manager._globalScaleChanged}`);
     }
 
     /**
