@@ -55,12 +55,39 @@ Check it works: `ddcutil detect` should list your monitor(s).
 ```sh
 git clone https://github.com/dixonSolutions/MonitorSettings.git
 cd MonitorSettings
-make install
+./setup.sh              # install for the current user and enable
+./setup.sh --live       # ...and apply everything a running session accepts
 ```
-Then log out and back in (required on Wayland for a newly installed extension) and run:
+
+`make install` does the same install if you prefer make; `setup.sh` is a thin,
+readable wrapper that also checks prerequisites and enables the extension.
+
+### Why a new build needs a login
+
+GNOME Shell imports an extension's module **once per shell process** — its own
+code says so: *"Extensions can only be imported once"* (`js/ui/extensionSystem.js`).
+A disable/enable cycle, and even the `ReloadExtension` D-Bus method (now
+`NOT_SUPPORTED`), re-run the code that is already in memory. A Wayland shell
+also cannot restart itself: there is no reexec path and no systemd unit for it,
+so a shell restart means a logout.
+
+`--live` does not pretend otherwise. It applies what a running session *can*
+accept — files, compiled schemas, settings, and a fresh monitor scan from
+re-running `enable()` — and then says plainly that changed JavaScript still
+waits for the next login. To watch a new build without logging out, use the
+nested shell described under [Testing](#watching-it-in-a-nested-shell).
+
+## Update
+
 ```sh
-gnome-extensions enable monitor-settings@dixonsolutions.github.io
+./update.sh                 # fetch and install the latest of this branch
+./update.sh --live          # ...and apply it to the running session
+./update.sh --check         # show what an update would change, install nothing
+./update.sh --tag v1.0.0    # install a tagged release instead
 ```
+
+Fetching and checkout happen in `update.sh`; the install is delegated to
+`setup.sh`, so there is one implementation. Both are plain bash and safe to read.
 
 If you used *Brightness control using ddcutil* before, disable it to avoid duplicate sliders and shortcut clashes.
 
