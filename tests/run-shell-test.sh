@@ -24,6 +24,7 @@ dbus-run-session -- bash -c "
   gsettings set org.gnome.shell disable-user-extensions false
   gsettings set org.gnome.shell enabled-extensions \"['$UUID', '$TEST_UUID']\"
   gsettings set org.gnome.shell welcome-dialog-last-shown-version '999'
+  gsettings set org.gnome.shell.extensions.monitor-settings native-brightness false
   gnome-shell --headless --wayland --no-x11 --wayland-display=ms-test-0 --virtual-monitor 1600x1000 > '$WORK/shell.log' 2>&1 &
   PID=\$!
   for i in \$(seq 1 120); do grep -q '^DONE' '$MS_TEST_DIR/results.txt' 2>/dev/null && break; sleep 1; done

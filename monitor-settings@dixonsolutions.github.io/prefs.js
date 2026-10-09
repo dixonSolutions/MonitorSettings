@@ -114,6 +114,12 @@ export default class MonitorSettingsPreferences extends ExtensionPreferences {
         settings.bind('show-manufacturer-features', mfg, 'active', Gio.SettingsBindFlags.DEFAULT);
         mfg.connect('notify::active', () => populate().catch(logError));
         behaviour.add(mfg);
+        const native = new Adw.SwitchRow({
+            title: _('Use GNOME\u2019s own brightness control'),
+            subtitle: _('Drive each monitor\u2019s DDC/CI brightness from the built-in Quick Settings slider, the brightness keys, the OSD and night light dimming. No separate brightness slider is added.'),
+        });
+        settings.bind('native-brightness', native, 'active', Gio.SettingsBindFlags.DEFAULT);
+        behaviour.add(native);
 
         // Shortcuts
         const shortcuts = new Adw.PreferencesGroup({
@@ -159,6 +165,12 @@ export default class MonitorSettingsPreferences extends ExtensionPreferences {
         const debug = new Adw.SwitchRow({title: _('Debug logging'), subtitle: _('Log every ddcutil call to the journal')});
         settings.bind('debug', debug, 'active', Gio.SettingsBindFlags.DEFAULT);
         advanced.add(debug);
+        const unmatched = new Adw.SwitchRow({
+            title: _('Bridge monitors missing from the display layout'),
+            subtitle: _('Off: a monitor is only handed to GNOME when its connector matches a screen. On: a monitor with no matching output is attached to a free screen. Needed in nested or headless test shells, whose only output is virtual.'),
+        });
+        settings.bind('brightness-map-unmatched', unmatched, 'active', Gio.SettingsBindFlags.DEFAULT);
+        advanced.add(unmatched);
     }
 }
 
